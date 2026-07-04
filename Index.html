@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VAANI Live Safety Dashboard</title>
+<style>
+  body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; padding:20px; }
+  .container { max-width: 900px; margin:auto; }
+  .card { background:#fff; border-radius:10px; padding:16px; margin-bottom:16px; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
+  h2 { margin-top:0; color:#b3002d; }
+  #status { font-weight:bold; }
+  #hrValue { font-size: 40px; color:#b3002d; }
+  #map { height: 350px; width: 100%; border-radius:8px; }
+  #sosBanner { display:none; background:#b3002d; color:#fff; text-align:center; padding:14px; border-radius:8px; margin-bottom:16px; font-size:20px; font-weight:bold; animation: pulse 1s infinite; }
+  @keyframes pulse { 0% { opacity:1; } 50% { opacity:0.6; } 100% { opacity:1; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>VAANI — Live Safety Dashboard</h1>
+  <div id="sosBanner">🚨 SOS ALERT ACTIVE — Abnormal Heart Rate Detected 🚨</div>
+  <div class="card">
+    <h2>Status</h2>
+    <p id="status">Waiting for data...</p>
+    <p>Last updated: <span id="lastUpdated">--</span></p>
+  </div>
+
+  <div class="card">
+    <h2>Live Heart Rate</h2>
+    <div id="hrValue">-- bpm</div>
+    <canvas id="hrChart" height="120"></canvas>
+  </div>
+
+  <div class="card">
+    <h2>Live Location</h2>
+    <div id="map"></div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ---- Section 5: Firebase config ----
+// Replace with your own Firebase project config (Firebase Console > Project Settings)
+const firebaseConfig = {
+  apiKey: "AIzaSyDcdhvpJoSLZeKxsAnuaQLwlRxkd-hmd14",
+  authDomain: "vaani-5f7dc.firebaseapp.com",
+  databaseURL: "https://vaani-5f7dc-default-rtdb.firebaseio.com",
+  projectId: "vaani-5f7dc",
+  storageBucket: "vaani-5f7dc.firebasestorage.app",
+  messagingSenderId: "11251062364",
+  appId: "1:11251062364:web:d62316c57473cff4e83899"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ---- Section 6: Chart.js setup ----
+const ctx = document.getElementById('hrChart').getContext('2d');
+const hrChart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Heart Rate (bpm)',
+      data: [],
+      borderColor: '#b3002d',
+      backgroundColor: 'rgba(179,0,45,0.1)',
+      tension: 0.3,
+      fill: true
+    }]
+  },
+  options: {
+    animation: false,
+    scales: { y: { beginAtZero: false } }
+  }
+});
+
+// ---- Section 7: Map setup (Leaflet + OpenStreetMap, completely free) ----
+let map, marker;
+function initMap(lat, lng) {
+  map = L.map('map').setView([lat, lng], 16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+  marker = L.marker([lat, lng]).addTo(map);
+}
+function updateMap(lat, lng) {
+  if (!map) { initMap(lat, lng); return; }
+  marker.setLatLng([lat, lng]);
+  map.panTo([lat, lng]);
+}
+
+// ---- Section 8: Heart rate listener ----
+db.ref('vaani/heartRate').on('value', (snapshot) => {
+  const hr = snapshot.val();
+  if (hr === null) return;
+
+  const hrDisplay = document.getElementById('hrValue');
+  hrDisplay.innerText = hr + " bpm";
+  hrDisplay.style.color = (hr > 200 || (hr < 40 && hr > 0)) ? "#ff0000" : "#b3002d";
+
+  const now = new Date().toLocaleTimeString();
+  hrChart.data.labels.push(now);
+  hrChart.data.datasets[0].data.push(hr);
+
+  if (hrChart.data.labels.length > 20) {
+    hrChart.data.labels.shift();
+    hrChart.data.datasets[0].data.shift();
+  }
+  hrChart.update();
+});
+
+// ---- Section 8B: SOS alert banner listener ----
+db.ref('vaani/sosActive').on('value', (snapshot) => {
+  const sos = snapshot.val();
+  document.getElementById('sosBanner').style.display = sos ? "block" : "none";
+});
+
+// ---- Section 9: GPS location listener ----
+db.ref('vaani/location').on('value', (snapshot) => {
+  const loc = snapshot.val();
+  if (!loc || !loc.lat || !loc.lng) return;
+  updateMap(loc.lat, loc.lng);
+});
+
+// ---- Section 10: Status & timestamp ----
+db.ref('vaani/lastUpdated').on('value', (snapshot) => {
+  const ts = snapshot.val();
+  document.getElementById('lastUpdated').innerText = ts || '--';
+});
+
+db.ref('.info/connected').on('value', (snap) => {
+  document.getElementById('status').innerText = snap.val()
+    ? "✅ Connected — receiving live data"
+    : "⚠️ Disconnected — no live data";
+});
+</script>
+</body>
+</html>
